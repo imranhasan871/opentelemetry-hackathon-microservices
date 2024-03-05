@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Inventory {
+  id        String          @id @default(uuid())
+  productId String          @unique
+  sku       String          @unique
+  quantity  Int             @default(0)
+  price     Float
+  status    InventoryStatus @default(OUT_OF_STOCK)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("inventories")
+}
+
+model StockHistory {
+  id            String           @id @default(uuid())
+  productId     String
+  sku           String
+  type          StockHistoryType @default(ADDITION)
+  last_stock    Int
+  current_stock Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("stock_histories")
+}
+
+enum InventoryStatus {
+  IN_STOCK
+  OUT_OF_STOCK
+}
+
+enum StockHistoryType {
+  ADDITION
+  DEDUCTION
+  SOLD
+}

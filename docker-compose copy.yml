@@ -1,0 +1,256 @@
+version: "3.7"
+
+volumes:
+  db_data: {}
+  redis-data: {}
+  mailhog_data: {}
+  prometheus: {}
+  rabbitmq_data: {}
+
+networks:
+  practical-ms:
+    name: practical-ms
+    driver: bridge
+
+services:
+  # Auth Service and postgress database ------------------------------
+
+  db:
+    image: postgres:9.6
+    container_name: db
+    restart: on-failure
+    networks:
+      - practical-ms
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: db
+      POSTGRES_PASSWORD: db
+      POSTGRES_DB: db
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "db"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  auth:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    image: auth
+    container_name: auth
+    restart: on-failure
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/auth?schema=public
+      MODE: development
+      JWT_ACCESS_SECRET: access_secret
+      USER_SERVICE_URL: http://host.docker.internal:4003/api/v1
+      MAIL_SERVICE_URL: http://host.docker.internal:4004/api/v1
+      AUTH_SERVICE_URL: http://host.docker.internal:4000/api/v1
+      EMAIL_FROM: auth@stacklearner.com
+    depends_on:
+      - db
+    volumes:
+      - ./auth:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  user:
+    build:
+      context: ./user
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    image: user
+    container_name: user
+    restart: on-failure
+    ports:
+      - "4003:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/user?schema=public
+      MODE: development
+    depends_on:
+      - db
+    volumes:
+      - ./user:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # catalog Service and postgress database ------------------------------
+  catalog:
+    build:
+      context: ./catalog
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    image: catalog
+    container_name: catalog
+    restart: on-failure
+    ports:
+      - "4001:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/catalog?schema=public
+      MODE: development
+      INVENTORY_SERVICE_URL: http://host.docker.internal:4002/api/v1
+      AUTH_SERVICE_URL: http://host.docker.internal:4000/api/v1
+    depends_on:
+      - db
+    volumes:
+      - ./catalog:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Inventory Service and postgress database ------------------------------
+
+  inventory:
+    build:
+      context: ./inventory
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    image: inventory
+    container_name: inventory
+    restart: on-failure
+    ports:
+      - "4002:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/inventory?schema=public
+    depends_on:
+      - db
+    volumes:
+      - ./inventory:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Mail Service and postgress database ------------------------------
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - 1025:1025 # SMTP port
+      - 8025:8025
+    networks:
+      - practical-ms
+    volumes:
+      - mailhog_data:/var/lib/mailhog
+
+  mail:
+    build:
+      context: ./mail
+      dockerfile: Dockerfile
+    image: mail
+    container_name: mail
+    restart: on-failure
+    ports:
+      - "4004:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/mail?schema=public
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+
+    depends_on:
+      - db
+      - mailhog
+    volumes:
+      - ./mail:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Redis Service
+  redis-stack:
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis-data:/data
+    environment:
+      - REDIS_ARGS=--save 900 1
+    networks:
+      - practical-ms
+
+  # Cart Service
+
+  cart:
+    build:
+      context: ./cart
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    image: cart
+    container_name: cart
+    restart: on-failure
+    ports:
+      - "4005:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/cart?schema=public
+      MODE: development
+      REDIS_URL: redis://host.docker.internal:6379
+      INVENTORY_SERVICE_URL: http://host.docker.internal:4002/api/v1
+      ORDER_SERVICE_URL: http://host.docker.internal:4006/api/v1
+      AUTH_SERVICE_URL: http://host.docker.internal:4000/api/v1
+      REDIS_EXPIRATION_TIME: 900 # 15 minutes
+
+    depends_on:
+      - db
+      - redis-stack
+    volumes:
+      - ./cart:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Order Service
+  order:
+    build:
+      context: ./order
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    image: order
+    container_name: order
+    restart: on-failure
+    ports:
+      - "4006:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/order?schema=public
+      MAIL_SERVICE_URL: http://host.docker.internal:4004/api/v1
+    depends_on:
+      - db
+    volumes:
+      - ./order:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+# RabitMQ
+  rabbitmq:
+    image: rabbitmq:3.8-management
+    ports:
+      - "5672:5672" # RabbitMQ main port
+      - "15672:15672" # RabbitMQ management UI port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  # Jaeger and Prometheus
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - 14268:14268
+      - 16686:16686
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+
+  prometheus:
+    image: prom/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+    ports:
+      - 9090:9090
+

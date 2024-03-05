@@ -1,0 +1,471 @@
+version: "3.7"
+
+volumes:
+  auth_data: {}
+  catalog_data: {}
+  inventory_data: {}
+  user_data: {}
+  mail_data: {}
+  mailhog_data: {}
+  redis-data: {}
+  cart_data: {}
+  order_data: {}
+
+networks:
+  practical-ms:
+    name: practical-ms
+    driver: bridge
+
+services:
+  # Auth Service and postgress database ------------------------------
+  # auth-db:
+  #   image: postgres:9.6
+  #   container_name: auth-db
+  #   restart: on-failure
+  #   networks:
+  #     - practical-ms
+  #   volumes:
+  #     - auth_data:/var/lib/postgresql/data
+  #   environment:
+  #     POSTGRES_USER: auth
+  #     POSTGRES_PASSWORD: auth
+  #     POSTGRES_DB: auth
+  #   ports:
+  #     - "5433:5432"
+  #   healthcheck:
+  #     test: ["CMD", "pg_isready", "-U", "auth"]
+  #     interval: 30s
+  #     timeout: 30s
+  #     retries: 3
+
+  # auth-prepare:
+  #   build:
+  #     context: ./auth
+  #     dockerfile: Dockerfile
+  #   command: npx prisma migrate dev --name init
+  #   environment:
+  #     DATABASE_URL: postgresql://auth:auth@host.docker.internal:5433/auth?schema=public
+  #   networks:
+  #     - practical-ms
+  #   restart: on-failure
+  #   depends_on:
+  #     - auth-db
+
+  db:
+    image: postgres:9.6
+    container_name: db
+    restart: on-failure
+    networks:
+      - practical-ms
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: db
+      POSTGRES_PASSWORD: db
+      POSTGRES_DB: db
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "db"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+
+
+  auth:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    image: auth
+    container_name: auth
+    restart: on-failure
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://db:db@host.docker.internal:5433/auth?schema=public
+      MODE: development
+      JWT_ACCESS_SECRET: access_secret
+      USER_SERVICE_URL: http://host.docker.internal:4003/api/v1
+      MAIL_SERVICE_URL: http://host.docker.internal:4004/api/v1
+      AUTH_SERVICE_URL: http://host.docker.internal:4000/api/v1
+      EMAIL_FROM: auth@stacklearner.com
+    depends_on:
+      - db
+    volumes:
+      - ./auth:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # # User Service and postgress database ------------------------------
+  # user-db:
+  #   image: postgres:9.6
+  #   container_name: user-db
+  #   restart: on-failure
+  #   networks:
+  #     - practical-ms
+  #   volumes:
+  #     - user_data:/var/lib/postgresql/data
+  #   environment:
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: user
+  #     POSTGRES_DB: user
+  #   ports:
+  #     - "5439:5432"
+  #   healthcheck:
+  #     test: ["CMD", "pg_isready", "-U", "user"]
+  #     interval: 30s
+  #     timeout: 30s
+  #     retries: 3
+
+  # user-prepare:
+  #   build:
+  #     context: ./user
+  #     dockerfile: Dockerfile
+  #   command: npx prisma migrate dev --name init
+  #   environment:
+  #     DATABASE_URL: postgresql://user:user@host.docker.internal:5439/user?schema=public
+  #   networks:
+  #     - practical-ms
+  #   restart: on-failure
+  #   depends_on:
+  #     - user-db
+
+  user:
+    build:
+      context: ./user
+      dockerfile: Dockerfile
+    image: user
+    container_name: user
+    restart: on-failure
+    ports:
+      - "4003:4000"
+    environment:
+      DATABASE_URL: postgresql://user:user@host.docker.internal:5439/user?schema=public
+      MODE: development
+    depends_on:
+      - user-db
+      - user-prepare
+    volumes:
+      - ./user:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # catalog Service and postgress database ------------------------------
+  catalog-db:
+    image: postgres:9.6
+    container_name: catalog-db
+    restart: on-failure
+    networks:
+      - practical-ms
+    volumes:
+      - catalog_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: catalog
+      POSTGRES_PASSWORD: catalog
+      POSTGRES_DB: catalog
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "catalog"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  catalog-prepare:
+    build:
+      context: ./catalog
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    environment:
+      DATABASE_URL: postgresql://catalog:catalog@host.docker.internal:5434/catalog?schema=public
+    networks:
+      - practical-ms
+    restart: on-failure
+    depends_on:
+      - catalog-db
+
+  catalog:
+    build:
+      context: ./catalog
+      dockerfile: Dockerfile
+    image: catalog
+    container_name: catalog
+    restart: on-failure
+    ports:
+      - "4001:4000"
+    environment:
+      DATABASE_URL: postgresql://catalog:catalog@host.docker.internal:5434/catalog?schema=public
+      MODE: development
+      INVENTORY_SERVICE_URL: http://host.docker.internal:4002/api/v1
+      AUTH_SERVICE_URL: http://host.docker.internal:4000/api/v1
+    depends_on:
+      - catalog-db
+      - catalog-prepare
+    volumes:
+      - ./catalog:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Inventory Service and postgress database ------------------------------
+  inventory-db:
+    image: postgres:9.6
+    container_name: inventory-db
+    restart: on-failure
+    networks:
+      - practical-ms
+    volumes:
+      - inventory_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: inventory
+      POSTGRES_DB: inventory
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "auth"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  inventory-prepare:
+    build:
+      context: ./inventory
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    environment:
+      DATABASE_URL: postgresql://inventory:inventory@host.docker.internal:5435/inventory?schema=public
+      MODE: development
+    networks:
+      - practical-ms
+    restart: on-failure
+    depends_on:
+      - inventory-db
+
+  inventory:
+    build:
+      context: ./inventory
+      dockerfile: Dockerfile
+    image: inventory
+    container_name: inventory
+    restart: on-failure
+    ports:
+      - "4002:4000"
+    environment:
+      DATABASE_URL: postgresql://inventory:inventory@host.docker.internal:5435/inventory?schema=public
+    depends_on:
+      - inventory-db
+      - inventory-prepare
+    volumes:
+      - ./inventory:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Mail Service and postgress database ------------------------------
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - 1025:1025 # SMTP port
+      - 8025:8025
+    networks:
+      - practical-ms
+    volumes:
+      - mailhog_data:/var/lib/mailhog
+
+  mail-db:
+    image: postgres:9.6
+    container_name: mail-db
+    restart: on-failure
+    networks:
+      - practical-ms
+    volumes:
+      - mail_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: mail
+      POSTGRES_PASSWORD: mail
+      POSTGRES_DB: mail
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mail"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  mail-prepare:
+    build:
+      context: ./mail
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    environment:
+      DATABASE_URL: postgresql://mail:mail@host.docker.internal:5436/mail?schema=public
+      MODE: development
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+    networks:
+      - practical-ms
+    restart: on-failure
+    depends_on:
+      - mail-db
+      - mailhog
+
+  mail:
+    build:
+      context: ./mail
+      dockerfile: Dockerfile
+    image: mail
+    container_name: mail
+    restart: on-failure
+    ports:
+      - "4004:4000"
+    environment:
+      DATABASE_URL: postgresql://mail:mail@host.docker.internal:5436/mail?schema=public
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+
+    depends_on:
+      - mail-db
+      - mail-prepare
+      - mailhog
+    volumes:
+      - ./mail:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Redis Service
+  redis-stack:
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis-data:/data
+    environment:
+      - REDIS_ARGS=--save 900 1
+    networks:
+      - practical-ms
+
+  # Cart Service
+  cart-db:
+    image: postgres:9.6
+    container_name: cart-db
+    restart: on-failure
+    networks:
+      - practical-ms
+    volumes:
+      - cart_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: cart
+      POSTGRES_PASSWORD: cart
+      POSTGRES_DB: cart
+    ports:
+      - "5437:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cart"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  cart-prepare:
+    build:
+      context: ./cart
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    environment:
+      DATABASE_URL: postgresql://cart:cart@host.docker.internal:5437/cart?schema=public
+    networks:
+      - practical-ms
+    restart: on-failure
+    depends_on:
+      - cart-db
+      - redis-stack
+  cart:
+    build:
+      context: ./cart
+      dockerfile: Dockerfile
+    image: cart
+    container_name: cart
+    restart: on-failure
+    ports:
+      - "4005:4000"
+    environment:
+      DATABASE_URL: postgresql://cart:cart@host.docker.internal:5437/cart?schema=public
+      MODE: development
+      REDIS_URL: redis://host.docker.internal:6379
+      INVENTORY_SERVICE_URL: http://host.docker.internal:4002/api/v1
+      ORDER_SERVICE_URL: http://host.docker.internal:4006/api/v1
+      AUTH_SERVICE_URL: http://host.docker.internal:4000/api/v1
+      REDIS_EXPIRATION_TIME: 900 # 15 minutes
+
+    depends_on:
+      - cart-db
+      - cart-prepare
+      - redis-stack
+    volumes:
+      - ./cart:/app
+      - /app/node_modules
+    networks:
+      - practical-ms
+
+  # Order Service
+  order-db:
+    image: postgres:9.6
+    container_name: order-db
+    restart: on-failure
+    networks:
+      - practical-ms
+    volumes:
+      - order_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order
+      POSTGRES_DB: order
+    ports:
+      - "5438:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "order"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  order-prepare:
+    build:
+      context: ./order
+      dockerfile: Dockerfile
+    command: npx prisma migrate dev --name init
+    environment:
+      DATABASE_URL: postgresql://order:order@host.docker.internal:5438/order?schema=public
+      MODE: development
+      MAIL_SERVICE_URL: http://host.docker.internal:4004/api/v1
+    networks:
+      - practical-ms
+    restart: on-failure
+    depends_on:
+      - order-db
+      - redis-stack
+  order:
+    build:
+      context: ./order
+      dockerfile: Dockerfile
+    image: order
+    container_name: order
+    restart: on-failure
+    ports:
+      - "4006:4000"
+    environment:
+      DATABASE_URL: postgresql://order:order@host.docker.internal:5438/order?schema=public
+      MAIL_SERVICE_URL: http://host.docker.internal:4004/api/v1
+    depends_on:
+      - order-db
+      - order-prepare
+    volumes:
+      - ./order:/app
+      - /app/node_modules
+    networks:
+      - practical-ms

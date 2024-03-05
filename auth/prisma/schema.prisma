@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["tracing"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String     @id @default(uuid())
+  userId   String     @unique
+  email    String     @unique
+  password String
+  role     UserRole   @default(USER)
+  verified Boolean    @default(false)
+  status   UserStatus @default(PENDING)
+
+  lastLoginAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("credentials")
+}
+
+// Create Mode for Password Reset
+model Verification {
+  id               String             @id @default(uuid())
+  userId           String
+  verificationCode String             @unique
+  status           VerificationStatus @default(PENDING)
+  issuedAt         DateTime           @default(now())
+  expiredAt        DateTime
+  verifiedAt       DateTime?
+  type             VerificationType
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("verifications")
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  BLOCKED
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum VerificationStatus {
+  PENDING
+  EXPIRED
+  USED
+}
+
+enum VerificationType {
+  ACCOUNT_VERIFICATION
+  PASSWORD_RESET
+}
